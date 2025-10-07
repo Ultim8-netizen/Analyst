@@ -1,0 +1,41 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/**/*.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/analyze-pair",
+      "dest": "/api/analyze-pair.py"
+    },
+    {
+      "src": "/api/fetch-news",
+      "dest": "/api/fetch-news.py"
+    },
+    {
+      "src": "/api/update-all",
+      "dest": "/api/update-all.py"
+    },
+    {
+      "src": "/api/get-analysis",
+      "dest": "/api/get-analysis.py"
+    }
+  ],
+  "env": {
+    "MONGODB_URI": "@mongodb_uri",
+    "ALPHA_VANTAGE_KEY": "@alpha_vantage_key",
+    "POLYGON_KEY": "@polygon_key",
+    "EODHD_KEY": "@eodhd_key",
+    "NEWSAPI_KEY": "@newsapi_key",
+    "UPDATE_SECRET_KEY": "@update_secret_key"
+  },
+  "functions": {
+    "api/**/*.py": {
+      "runtime": "python3.9",
+      "maxDuration": 30
+    }
+  }
+}

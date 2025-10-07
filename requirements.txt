@@ -1,0 +1,17 @@
+# Core Dependencies
+requests==2.32.5
+pymongo==4.15.2
+pandas==2.3.3
+numpy==2.3.3
+
+# Technical Analysis
+ta==0.11.0
+scipy==1.16.2
+scikit-learn==1.7.2
+
+# Data Processing
+python-dateutil==2.9.0.post0
+pytz==2025.2
+
+# Note: Other packages (yfinance, fastapi, textblob) not needed for serverless setup
+# Vercel serverless functions don't need web frameworks

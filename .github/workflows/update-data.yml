@@ -1,0 +1,50 @@
+# GitHub Actions Workflow for Scheduled Data Updates
+# Place in: .github/workflows/update-data.yml
+
+name: Update Trading Data
+
+on:
+  # Run every 4 hours
+  schedule:
+    - cron: '0 */4 * * *'
+  
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      
+      - name: Call Vercel Update Endpoint
+        run: |
+          response=$(curl -X POST \
+            -H "Authorization: Bearer ${{ secrets.UPDATE_SECRET_KEY }}" \
+            -H "Content-Type: application/json" \
+            -w "\n%{http_code}" \
+            ${{ secrets.VERCEL_API_URL }}/api/update-all)
+          
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | head -n-1)
+          
+          echo "HTTP Status: $http_code"
+          echo "Response: $body"
+          
+          if [ "$http_code" -ne 200 ]; then
+            echo "Error: Update failed with status $http_code"
+            exit 1
+          fi
+      
+      - name: Notify on Success
+        if: success()
+        run: |
+          echo "✅ Data update completed successfully at $(date)"
+      
+      - name: Notify on Failure
+        if: failure()
+        run: |
+          echo "❌ Data update failed at $(date)"
+          # You can add notification services here (email, Slack, etc.)
