@@ -22,6 +22,10 @@
     {
       "src": "/api/get-analysis",
       "dest": "/api/get-analysis.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/public/$1"
     }
   ]
 }
