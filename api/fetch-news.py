@@ -6,11 +6,25 @@ from http.server import BaseHTTPRequestHandler
 import json
 import sys
 import os
+import math
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'utils'))
 
 from database import get_db
 from fetchers import DataFetcher
+
+
+def clean_nan_from_dict(obj):
+    """Recursively clean NaN values from dictionaries"""
+    if isinstance(obj, dict):
+        return {k: clean_nan_from_dict(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [clean_nan_from_dict(item) for item in obj]
+    elif isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return 0.0
+        return obj
+    return obj
 
 
 class handler(BaseHTTPRequestHandler):
@@ -35,19 +49,39 @@ class handler(BaseHTTPRequestHandler):
             # Fetch news articles
             articles = fetcher.fetch_market_news()
             
+            print(f"Fetched {len(articles) if articles else 0} raw articles from NewsAPI")
+            
             if not articles:
                 self._send_response(200, {
                     'success': False,
-                    'message': 'No news articles fetched',
+                    'message': 'No news articles fetched from API',
                     'count': 0
                 })
                 return
             
             # Process each article
             processed_count = 0
+            skipped_count = 0
+            
             for article in articles:
                 # Determine relevant pairs
                 relevant_pairs = fetcher.analyze_news_relevance(article, trading_pairs)
+                
+                # If no specific pairs found, include article but mark as general
+                if not relevant_pairs:
+                    # Check if it's at least market-related
+                    text = f"{article.get('title', '')} {article.get('description', '')}".lower()
+                    general_terms = ['market', 'trading', 'economy', 'crypto', 'forex', 'currency', 'bitcoin']
+                    
+                    if any(term in text for term in general_terms):
+                        # Assign to major pairs as general market news
+                        relevant_pairs = ['BTCUSDT', 'EURUSD']
+                        print(f"Article assigned to general pairs: {article.get('title', '')[:50]}")
+                    else:
+                        # Skip completely irrelevant articles
+                        skipped_count += 1
+                        print(f"Skipped irrelevant article: {article.get('title', '')[:50]}")
+                        continue
                 
                 # Calculate sentiment and impact
                 sentiment = fetcher.calculate_sentiment(article)
@@ -64,22 +98,31 @@ class handler(BaseHTTPRequestHandler):
                     'impact_score': impact_score
                 }
                 
+                # Clean NaN values
+                news_data = clean_nan_from_dict(news_data)
+                
                 db.save_news(news_data)
                 processed_count += 1
+                
+                print(f"Saved article for pairs {relevant_pairs}: {article.get('title', '')[:50]}")
             
             # Clean up old news (keep last 7 days)
             deleted = db.cleanup_old_news(days_to_keep=7)
             
             db.close()
             
+            print(f"Final stats - Processed: {processed_count}, Skipped: {skipped_count}, Deleted old: {deleted}")
+            
             self._send_response(200, {
                 'success': True,
                 'processed': processed_count,
+                'skipped': skipped_count,
                 'deleted_old': deleted,
-                'message': f'Successfully processed {processed_count} news articles'
+                'message': f'Successfully processed {processed_count} news articles (skipped {skipped_count})'
             })
             
         except Exception as e:
+            print(f"Error in fetch-news: {str(e)}")
             self._send_error(500, f'Error: {str(e)}')
     
     def do_POST(self):
@@ -105,12 +148,15 @@ class handler(BaseHTTPRequestHandler):
             # Get pair-specific news
             news = db.get_pair_news(symbol, hours=hours)
             
+            # Clean NaN values from news data
+            cleaned_news = [clean_nan_from_dict(article) for article in news]
+            
             db.close()
             
             self._send_response(200, {
                 'symbol': symbol,
-                'count': len(news),
-                'news': news
+                'count': len(cleaned_news),
+                'news': cleaned_news
             })
             
         except Exception as e:
