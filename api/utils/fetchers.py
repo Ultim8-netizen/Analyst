@@ -351,10 +351,10 @@ class DataFetcher:
         try:
             url = "https://newsapi.org/v2/everything"
             params = {
-                'q': 'forex OR cryptocurrency OR bitcoin OR trading',
+                'q': 'trading OR bitcoin OR cryptocurrency OR forex OR market OR stock OR economy',
                 'language': 'en',
                 'sortBy': 'publishedAt',
-                'pageSize': 20,
+                'pageSize': 30,  # Increased from 20
                 'apiKey': self.newsapi_key
             }
             
@@ -391,35 +391,58 @@ class DataFetcher:
         Determine which trading pairs are relevant to a news article
         Returns: list of relevant pair symbols
         """
-        text = f"{article.get('title', '')} {article.get('description', '')}".lower()
+        text = f"{article.get('title', '')} {article.get('description', '')} {article.get('content', '')}".lower()
         
         relevant_pairs = []
         
-        # Keyword mapping
+        # Specific keyword mapping (exact matches)
         keywords = {
-            'BTCUSDT': ['bitcoin', 'btc'],
-            'ETHUSDT': ['ethereum', 'eth'],
+            'BTCUSDT': ['bitcoin', 'btc', 'satoshi'],
+            'ETHUSDT': ['ethereum', 'eth', 'vitalik', 'ether'],
             'ETCUSDT': ['ethereum classic', 'etc'],
             'SOLUSDT': ['solana', 'sol'],
-            'DOGEUSDT': ['dogecoin', 'doge'],
-            'EURUSD': ['euro', 'eur', 'european', 'ecb'],
-            'GBPUSD': ['pound', 'sterling', 'gbp', 'uk', 'britain'],
-            'USDJPY': ['yen', 'jpy', 'japan', 'boj'],
-            'GBPJPY': ['pound', 'yen', 'gbp', 'jpy'],
-            'AUDUSD': ['aussie', 'aud', 'australia', 'rba'],
-            'USDCAD': ['loonie', 'cad', 'canada', 'boc']
+            'DOGEUSDT': ['dogecoin', 'doge', 'shiba'],
+            'EURUSD': ['euro', 'eur', 'ecb', 'european central bank', 'eurozone', 'lagarde'],
+            'GBPUSD': ['pound', 'sterling', 'gbp', 'uk', 'britain', 'bank of england', 'boe'],
+            'USDJPY': ['yen', 'jpy', 'japan', 'boj', 'bank of japan'],
+            'GBPJPY': ['pound yen', 'gbp/jpy', 'gbpjpy'],
+            'AUDUSD': ['aussie', 'aud', 'australia', 'rba', 'australian dollar'],
+            'USDCAD': ['loonie', 'cad', 'canada', 'boc', 'canadian dollar']
         }
         
+        # Check for specific pair keywords
         for pair, terms in keywords.items():
             if any(term in text for term in terms):
                 relevant_pairs.append(pair)
         
-        # If no specific pairs found but mentions crypto/forex generally
+        # Remove duplicates while preserving order
+        relevant_pairs = list(dict.fromkeys(relevant_pairs))
+        
+        # If no specific pairs found, check for general categories
         if not relevant_pairs:
-            if 'crypto' in text or 'bitcoin' in text:
+            # Crypto-related terms
+            crypto_terms = [
+                'crypto', 'cryptocurrency', 'blockchain', 'digital currency', 'digital asset',
+                'altcoin', 'mining', 'defi', 'nft', 'web3', 'token', 'coin',
+                'binance', 'coinbase', 'exchange'
+            ]
+            
+            # Forex-related terms
+            forex_terms = [
+                'forex', 'currency', 'exchange rate', 'central bank', 'fed', 'federal reserve',
+                'interest rate', 'dollar', 'usd', 'inflation', 'gdp', 'employment',
+                'trade', 'monetary policy', 'rate hike', 'rate cut', 'treasury'
+            ]
+            
+            # Check for crypto relevance
+            if any(term in text for term in crypto_terms):
                 relevant_pairs = ['BTCUSDT', 'ETHUSDT']
-            elif 'forex' in text or 'dollar' in text:
+                print(f"General crypto article detected: {article.get('title', '')[:60]}")
+            
+            # Check for forex relevance
+            elif any(term in text for term in forex_terms):
                 relevant_pairs = ['EURUSD', 'GBPUSD']
+                print(f"General forex article detected: {article.get('title', '')[:60]}")
         
         return relevant_pairs
     
@@ -432,12 +455,14 @@ class DataFetcher:
         
         positive_words = [
             'surge', 'rally', 'gain', 'rise', 'bullish', 'boom', 'growth',
-            'profit', 'positive', 'up', 'strong', 'optimistic', 'recovery'
+            'profit', 'positive', 'up', 'strong', 'optimistic', 'recovery',
+            'breakthrough', 'success', 'soar', 'jump', 'climb', 'advance'
         ]
         
         negative_words = [
             'crash', 'fall', 'drop', 'decline', 'bearish', 'loss', 'weak',
-            'negative', 'down', 'risk', 'concern', 'warning', 'crisis'
+            'negative', 'down', 'risk', 'concern', 'warning', 'crisis',
+            'plunge', 'tumble', 'slump', 'collapse', 'fear', 'uncertain'
         ]
         
         positive_count = sum(1 for word in positive_words if word in text)
@@ -446,7 +471,7 @@ class DataFetcher:
         total = positive_count + negative_count
         
         if total == 0:
-            return 0
+            return 0.0
         
         sentiment = (positive_count - negative_count) / total
         
@@ -462,7 +487,8 @@ class DataFetcher:
         # Source credibility boost
         credible_sources = [
             'reuters', 'bloomberg', 'financial times', 'wall street journal',
-            'cnbc', 'marketwatch', 'forbes', 'coindesk'
+            'cnbc', 'marketwatch', 'forbes', 'coindesk', 'cointelegraph',
+            'the economist', 'business insider', 'yahoo finance'
         ]
         
         source = article.get('source', '').lower()
@@ -472,6 +498,8 @@ class DataFetcher:
         # Relevance boost
         if len(relevant_pairs) > 2:
             score += 1
+        elif len(relevant_pairs) == 0:
+            score -= 2  # Penalize if no pairs found
         
         # Recency boost
         published = article.get('published_at')
@@ -482,4 +510,4 @@ class DataFetcher:
             elif hours_old < 24:
                 score += 1
         
-        return min(score, 10)
+        return max(1, min(score, 10))  # Clamp between 1-10
