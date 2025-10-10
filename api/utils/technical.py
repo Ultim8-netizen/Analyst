@@ -4,7 +4,22 @@ Place in: /api/utils/technical.py
 """
 import numpy as np
 import pandas as pd
+import math
 from datetime import datetime, timedelta
+
+
+def safe_float(value, default=0.0):
+    """Convert value to float, handling NaN and inf"""
+    try:
+        if value is None:
+            return default
+        if isinstance(value, (int, float)):
+            if math.isnan(value) or math.isinf(value):
+                return default
+        return float(value)
+    except (ValueError, TypeError):
+        return default
+
 
 class TechnicalAnalyzer:
     """Calculate real technical indicators from price history"""
@@ -33,7 +48,8 @@ class TechnicalAnalyzer:
         rs = gain / loss
         rsi = 100 - (100 / (1 + rs))
         
-        return rsi.iloc[-1]
+        result = rsi.iloc[-1]
+        return safe_float(result, 50.0)
     
     def calculate_macd(self, fast=12, slow=26, signal=9):
         """Calculate MACD (Moving Average Convergence Divergence)"""
@@ -44,11 +60,15 @@ class TechnicalAnalyzer:
         signal_line = macd_line.ewm(span=signal, adjust=False).mean()
         histogram = macd_line - signal_line
         
+        macd_val = safe_float(macd_line.iloc[-1], 0.0)
+        signal_val = safe_float(signal_line.iloc[-1], 0.0)
+        hist_val = safe_float(histogram.iloc[-1], 0.0)
+        
         return {
-            'macd': round(macd_line.iloc[-1], 6),
-            'signal': round(signal_line.iloc[-1], 6),
-            'histogram': round(histogram.iloc[-1], 6),
-            'trend': 'bullish' if histogram.iloc[-1] > 0 else 'bearish'
+            'macd': round(macd_val, 6),
+            'signal': round(signal_val, 6),
+            'histogram': round(hist_val, 6),
+            'trend': 'bullish' if hist_val > 0 else 'bearish'
         }
     
     def calculate_bollinger_bands(self, period=20, std_dev=2):
@@ -59,13 +79,17 @@ class TechnicalAnalyzer:
         upper = sma + (std * std_dev)
         lower = sma - (std * std_dev)
         
-        current_price = self.df['close'].iloc[-1]
+        current_price = safe_float(self.df['close'].iloc[-1], 0.0)
+        
+        upper_val = safe_float(upper.iloc[-1], current_price * 1.02)
+        middle_val = safe_float(sma.iloc[-1], current_price)
+        lower_val = safe_float(lower.iloc[-1], current_price * 0.98)
         
         return {
-            'upper': round(upper.iloc[-1], 6),
-            'middle': round(sma.iloc[-1], 6),
-            'lower': round(lower.iloc[-1], 6),
-            'position': self._bb_position(current_price, upper.iloc[-1], lower.iloc[-1])
+            'upper': round(upper_val, 6),
+            'middle': round(middle_val, 6),
+            'lower': round(lower_val, 6),
+            'position': self._bb_position(current_price, upper_val, lower_val)
         }
     
     def _bb_position(self, price, upper, lower):
@@ -90,7 +114,8 @@ class TechnicalAnalyzer:
         tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
         atr = tr.rolling(window=period).mean()
         
-        return round(atr.iloc[-1], 6)
+        result = atr.iloc[-1]
+        return safe_float(result, 0.0001)
     
     def find_support_resistance(self, lookback=50):
         """
@@ -115,21 +140,23 @@ class TechnicalAnalyzer:
                 recent_data['high'].iloc[i] > recent_data['high'].iloc[i+1]):
                 resistance_levels.append(recent_data['high'].iloc[i])
         
-        current_price = self.df['close'].iloc[-1]
+        current_price = safe_float(self.df['close'].iloc[-1], 0.0)
         
         # Get nearest support and resistance
         support = max([s for s in support_levels if s < current_price], default=current_price * 0.97)
         resistance = min([r for r in resistance_levels if r > current_price], default=current_price * 1.03)
         
         return {
-            'support': round(support, 6),
-            'resistance': round(resistance, 6)
+            'support': round(safe_float(support, current_price * 0.97), 6),
+            'resistance': round(safe_float(resistance, current_price * 1.03), 6)
         }
     
     def calculate_ema(self, period=20):
         """Calculate Exponential Moving Average"""
         ema = self.df['close'].ewm(span=period, adjust=False).mean()
-        return round(ema.iloc[-1], 6)
+        result = ema.iloc[-1]
+        fallback = safe_float(self.df['close'].iloc[-1], 0.0)
+        return safe_float(result, fallback)
     
     def get_trend(self):
         """Determine overall trend using multiple EMAs"""
@@ -138,7 +165,7 @@ class TechnicalAnalyzer:
         
         ema_20 = self.calculate_ema(20)
         ema_50 = self.calculate_ema(50)
-        current_price = self.df['close'].iloc[-1]
+        current_price = safe_float(self.df['close'].iloc[-1], 0.0)
         
         # Strong uptrend
         if current_price > ema_20 > ema_50:
@@ -160,7 +187,11 @@ class TechnicalAnalyzer:
         avg_volume = self.df['volume'].tail(20).mean()
         current_volume = self.df['volume'].iloc[-1]
         
-        volume_ratio = current_volume / avg_volume if avg_volume > 0 else 1
+        avg_volume = safe_float(avg_volume, 1.0)
+        current_volume = safe_float(current_volume, 1.0)
+        
+        volume_ratio = current_volume / avg_volume if avg_volume > 0 else 1.0
+        volume_ratio = safe_float(volume_ratio, 1.0)
         
         return {
             'current': int(current_volume),
@@ -174,12 +205,15 @@ class TechnicalAnalyzer:
         if len(self.df) < periods:
             periods = len(self.df) - 1
         
-        current = self.df['close'].iloc[-1]
-        previous = self.df['close'].iloc[-(periods + 1)]
+        current = safe_float(self.df['close'].iloc[-1], 0.0)
+        previous = safe_float(self.df['close'].iloc[-(periods + 1)], current)
+        
+        if previous == 0:
+            return 0.0
         
         change = ((current - previous) / previous) * 100
         
-        return round(change, 2)
+        return safe_float(change, 0.0)
 
 
 class SignalGenerator:
@@ -192,7 +226,7 @@ class SignalGenerator:
         current_price: current market price
         """
         self.tech = technical_data
-        self.price = current_price
+        self.price = safe_float(current_price, 0.0)
     
     def calculate_position_size(self, account_risk=5, account_balance=100, lot_size=0.01):
         """
@@ -201,7 +235,7 @@ class SignalGenerator:
         For forex: 0.01 lot = 1000 units
         For crypto: Using USDT value directly
         """
-        atr = self.tech['atr']
+        atr = safe_float(self.tech.get('atr', 0.0001), 0.0001)
         
         # Stop loss at 1.5 x ATR (reasonable for 4hr timeframe)
         sl_distance = atr * 1.5
@@ -210,8 +244,8 @@ class SignalGenerator:
         tp_distance = sl_distance * 2.5
         
         return {
-            'sl_distance': round(sl_distance, 6),
-            'tp_distance': round(tp_distance, 6),
+            'sl_distance': round(safe_float(sl_distance, 0.0001), 6),
+            'tp_distance': round(safe_float(tp_distance, 0.0001), 6),
             'risk_amount': account_risk
         }
     
@@ -224,45 +258,48 @@ class SignalGenerator:
         confidence_factors = []
         
         # RSI Signal
-        rsi = self.tech['rsi']
+        rsi = safe_float(self.tech.get('rsi', 50.0), 50.0)
         if rsi < 30:
             signals.append('LONG')
-            confidence_factors.append(25)  # Oversold
+            confidence_factors.append(25)
         elif rsi > 70:
             signals.append('SHORT')
-            confidence_factors.append(25)  # Overbought
+            confidence_factors.append(25)
         elif 40 < rsi < 60:
-            confidence_factors.append(10)  # Neutral is weak signal
+            confidence_factors.append(10)
         
         # MACD Signal
-        macd = self.tech['macd']
-        if macd['trend'] == 'bullish' and macd['histogram'] > 0:
+        macd = self.tech.get('macd', {})
+        if macd.get('trend') == 'bullish' and safe_float(macd.get('histogram', 0), 0) > 0:
             signals.append('LONG')
             confidence_factors.append(20)
-        elif macd['trend'] == 'bearish' and macd['histogram'] < 0:
+        elif macd.get('trend') == 'bearish' and safe_float(macd.get('histogram', 0), 0) < 0:
             signals.append('SHORT')
             confidence_factors.append(20)
         
         # Bollinger Bands
-        bb = self.tech['bollinger_bands']
-        if bb['position'] == 'oversold':
+        bb = self.tech.get('bollinger_bands', {})
+        if bb.get('position') == 'oversold':
             signals.append('LONG')
             confidence_factors.append(15)
-        elif bb['position'] == 'overbought':
+        elif bb.get('position') == 'overbought':
             signals.append('SHORT')
             confidence_factors.append(15)
         
         # Support/Resistance
-        sr = self.tech['support_resistance']
-        if self.price <= sr['support'] * 1.01:  # Near support
+        sr = self.tech.get('support_resistance', {})
+        support = safe_float(sr.get('support', self.price * 0.97), self.price * 0.97)
+        resistance = safe_float(sr.get('resistance', self.price * 1.03), self.price * 1.03)
+        
+        if self.price <= support * 1.01:
             signals.append('LONG')
             confidence_factors.append(20)
-        elif self.price >= sr['resistance'] * 0.99:  # Near resistance
+        elif self.price >= resistance * 0.99:
             signals.append('SHORT')
             confidence_factors.append(20)
         
         # Trend alignment
-        trend = self.tech['trend']
+        trend = self.tech.get('trend', 'sideways')
         if trend in ['strong_uptrend', 'uptrend']:
             signals.append('LONG')
             confidence_factors.append(20)
@@ -300,14 +337,16 @@ class SignalGenerator:
             sl = entry - position['sl_distance']
             tp = entry + position['tp_distance']
         
-        risk_reward = position['tp_distance'] / position['sl_distance']
+        sl_dist = safe_float(position['sl_distance'], 0.0001)
+        tp_dist = safe_float(position['tp_distance'], 0.0001)
+        risk_reward = tp_dist / sl_dist if sl_dist > 0 else 2.5
         
         return {
             'direction': direction,
-            'confidence': round(confidence, 1),
-            'entry': round(entry, 6),
-            'tp': round(tp, 6),
-            'sl': round(sl, 6),
-            'risk_reward': round(risk_reward, 2),
-            'atr': self.tech['atr']
+            'confidence': round(safe_float(confidence, 0.0), 1),
+            'entry': round(safe_float(entry, 0.0), 6),
+            'tp': round(safe_float(tp, 0.0), 6),
+            'sl': round(safe_float(sl, 0.0), 6),
+            'risk_reward': round(safe_float(risk_reward, 2.5), 2),
+            'atr': safe_float(self.tech.get('atr', 0.0001), 0.0001)
         }
