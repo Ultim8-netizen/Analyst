@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler
 import json
 import sys
 import os
+import math
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'utils'))
 
@@ -37,6 +38,9 @@ class handler(BaseHTTPRequestHandler):
                     if '_id' in analysis:
                         del analysis['_id']
                     
+                    # Clean NaN values
+                    analysis = self._clean_nan_values(analysis)
+                    
                     # Get news for this pair
                     news = db.get_pair_news(symbol, hours=24)
                     analysis['news'] = news[:5]
@@ -51,29 +55,41 @@ class handler(BaseHTTPRequestHandler):
             # Get all pairs
             pairs = db.get_all_pairs(pair_type=pair_type)
             
-            # Clean up MongoDB _id fields
+            # Clean up MongoDB _id fields and NaN values
+            cleaned_pairs = []
             for pair in pairs:
                 if '_id' in pair:
                     del pair['_id']
+                cleaned_pair = self._clean_nan_values(pair)
+                cleaned_pairs.append(cleaned_pair)
             
             # Get system stats
             stats = db.get_system_stats()
             
             # Get high confidence signals
             high_conf = db.get_high_confidence_signals(min_confidence=75)
+            cleaned_high_conf = []
             for pair in high_conf:
                 if '_id' in pair:
                     del pair['_id']
+                cleaned_pair = self._clean_nan_values(pair)
+                cleaned_high_conf.append(cleaned_pair)
             
             db.close()
             
-            self._send_response(200, {
-                'pairs': pairs,
-                'high_confidence': high_conf,
+            result = {
+                'pairs': cleaned_pairs,
+                'high_confidence': cleaned_high_conf,
                 'stats': stats
-            })
+            }
+            
+            # Final clean of entire response
+            result = self._clean_nan_values(result)
+            
+            self._send_response(200, result)
             
         except Exception as e:
+            print(f"Error in get_analysis: {str(e)}")
             self._send_error(500, f'Error: {str(e)}')
     
     def do_POST(self):
@@ -101,14 +117,18 @@ class handler(BaseHTTPRequestHandler):
                     if analysis:
                         if '_id' in analysis:
                             del analysis['_id']
+                        analysis = self._clean_nan_values(analysis)
                         result['pairs'].append(analysis)
             else:
                 # Get all pairs
                 all_pairs = db.get_all_pairs()
+                cleaned_pairs = []
                 for pair in all_pairs:
                     if '_id' in pair:
                         del pair['_id']
-                result['pairs'] = all_pairs
+                    cleaned_pair = self._clean_nan_values(pair)
+                    cleaned_pairs.append(cleaned_pair)
+                result['pairs'] = cleaned_pairs
             
             # Filter by confidence if specified
             if min_confidence > 0:
@@ -126,10 +146,26 @@ class handler(BaseHTTPRequestHandler):
             
             db.close()
             
+            # Clean entire result
+            result = self._clean_nan_values(result)
+            
             self._send_response(200, result)
             
         except Exception as e:
             self._send_error(500, f'Error: {str(e)}')
+    
+    def _clean_nan_values(self, obj):
+        """Recursively clean NaN, inf, and None values from nested structures"""
+        if isinstance(obj, dict):
+            return {k: self._clean_nan_values(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._clean_nan_values(item) for item in obj]
+        elif isinstance(obj, float):
+            if math.isnan(obj) or math.isinf(obj):
+                return 0.0
+            return obj
+        else:
+            return obj
     
     def _parse_query(self):
         """Parse URL query parameters"""
