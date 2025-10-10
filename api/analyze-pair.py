@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler
 import json
 import sys
 import os
+import math
 from datetime import datetime
 
 # Add utils directory to path
@@ -16,6 +17,19 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'utils'))
 from database import get_db
 from fetchers import DataFetcher
 from technical import TechnicalAnalyzer, SignalGenerator
+
+
+def clean_nan_from_dict(obj):
+    """Recursively clean NaN values from dictionaries"""
+    if isinstance(obj, dict):
+        return {k: clean_nan_from_dict(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [clean_nan_from_dict(item) for item in obj]
+    elif isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return 0.0
+        return obj
+    return obj
 
 
 class handler(BaseHTTPRequestHandler):
@@ -127,6 +141,9 @@ class handler(BaseHTTPRequestHandler):
                     'timestamp': datetime.utcnow()
                 }
                 
+                # Clean NaN values
+                basic_result = clean_nan_from_dict(basic_result)
+                
                 db.save_pair_analysis(basic_result)
                 db.close()
                 return basic_result
@@ -180,6 +197,9 @@ class handler(BaseHTTPRequestHandler):
                 'timestamp': datetime.utcnow(),
                 'source': price_data.get('source', 'unknown')
             }
+            
+            # Clean NaN values before saving
+            full_analysis = clean_nan_from_dict(full_analysis)
             
             # Save to database
             db.save_pair_analysis(full_analysis)
