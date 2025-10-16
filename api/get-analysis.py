@@ -43,7 +43,10 @@ class handler(BaseHTTPRequestHandler):
                     
                     # Get news for this pair
                     news = db.get_pair_news(symbol, hours=24)
-                    analysis['news'] = news[:5]
+                    if news:
+                        analysis['news'] = [self._clean_nan_values(n) for n in news[:5]]
+                    else:
+                        analysis['news'] = []
                     
                     self._send_response(200, analysis)
                 else:
@@ -75,11 +78,22 @@ class handler(BaseHTTPRequestHandler):
                 cleaned_pair = self._clean_nan_values(pair)
                 cleaned_high_conf.append(cleaned_pair)
             
+            # Get recent news (last 24 hours, limit 20)
+            all_news = db.get_recent_news(hours=24, limit=20)
+            cleaned_news = []
+            if all_news:
+                for news_item in all_news:
+                    if '_id' in news_item:
+                        del news_item['_id']
+                    cleaned_news_item = self._clean_nan_values(news_item)
+                    cleaned_news.append(cleaned_news_item)
+            
             db.close()
             
             result = {
                 'pairs': cleaned_pairs,
                 'high_confidence': cleaned_high_conf,
+                'news': cleaned_news,
                 'stats': stats
             }
             
@@ -138,8 +152,15 @@ class handler(BaseHTTPRequestHandler):
                 ]
             
             # Get recent news
-            recent_news = db.get_recent_news(hours=24, limit=10)
-            result['news'] = recent_news
+            recent_news = db.get_recent_news(hours=24, limit=20)
+            cleaned_news = []
+            if recent_news:
+                for news_item in recent_news:
+                    if '_id' in news_item:
+                        del news_item['_id']
+                    cleaned_news_item = self._clean_nan_values(news_item)
+                    cleaned_news.append(cleaned_news_item)
+            result['news'] = cleaned_news
             
             # Get stats
             result['stats'] = db.get_system_stats()
