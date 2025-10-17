@@ -191,14 +191,14 @@ class TradingDatabase:
         }).sort('impact_score', DESCENDING).limit(10))
     
     def get_recent_news(self, hours=24, limit=20):
-        """Get all recent news"""
+        """Get all recent news - returns most recent articles regardless of age"""
         collection = self.db['news']
         
-        cutoff_time = datetime.utcnow() - timedelta(hours=hours)
+        # Simply get the most recent articles by published_at date
+        # This ensures we always return articles if they exist, without filtering by cutoff time
+        results = list(collection.find({}).sort('published_at', DESCENDING).limit(limit))
         
-        return list(collection.find({
-            'published_at': {'$gte': cutoff_time}
-        }).sort('published_at', DESCENDING).limit(limit))
+        return results
     
     def cleanup_old_news(self, days_to_keep=7):
         """Remove news older than specified days"""
